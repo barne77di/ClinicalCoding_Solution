@@ -1,0 +1,57 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "TextBlock",
+      "size": "Large",
+      "weight": "Bolder",
+      "text": "Clinical Coding Query"
+    },
+    {
+      "type": "TextBlock",
+      "text": "Episode: **${episodeId}**",
+      "wrap": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "From: ${createdBy}",
+      "isSubtle": true,
+      "wrap": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "Subject: ${subject}",
+      "wrap": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "Question:",
+      "weight": "Bolder"
+    },
+    {
+      "type": "TextBlock",
+      "text": "${body}",
+      "wrap": true
+    },
+    {
+      "type": "Input.Text",
+      "id": "clinicianResponse",
+      "placeholder": "Type your clarification here...",
+      "isMultiline": true
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Submit",
+      "title": "Send response",
+      "data": {
+        "msteams": {
+          "type": "messageBack",
+          "displayText": "Clinician responded"
+        }
+      }
+    }
+  ]
+}

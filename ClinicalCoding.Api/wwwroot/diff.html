@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Episode Code Diff</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 1rem; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+    h1, h2, h3 { margin: 0.2rem 0 0.5rem; }
+    ul { margin: 0; padding-left: 1.1rem; }
+    .muted { color: #666; font-size: 0.9rem; }
+    .header { display:flex; align-items:center; gap: 1rem; margin-bottom: 0.5rem; }
+    input { padding: 0.4rem; border: 1px solid #bbb; border-radius: 6px; }
+    button { padding: 0.4rem 0.7rem; }
+    .pill { background: #eef; padding: 0.2rem 0.5rem; border-radius: 999px; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Episode Code Diff</h1>
+    <span class="muted">Provide an episodeId to load the latest re-suggestion delta.</span>
+  </div>
+  <div>
+    <input id="ep" placeholder="Episode GUID" size="42" />
+    <button onclick="load()">Load</button>
+  </div>
+  <div id="content" style="margin-top:1rem;"></div>
+  <script>
+    async function load() {
+      const id = document.getElementById('ep').value.trim();
+      if (!id) return;
+      const token = sessionStorage.getItem('bearer'); // paste your token for quick test
+      const res = await fetch(`/episodes/${id}/code-diff`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      const data = await res.json();
+      const c = document.getElementById('content');
+      if (res.status !== 200) { c.innerHTML = `<div class="muted">Not found / unauthorized</div>`; return; }
+      c.innerHTML = `
+        <div class="card">
+          <div class="muted">Audit: ${data.auditId}</div>
+          <div class="grid">
+            <div>
+              <h3>Old Diagnoses</h3>
+              <ul>${data.dx.old.map(d=>`<li>${d.Code} — ${d.Description}${d.IsPrimary?' <span class=pill>primary</span>':''}</li>`).join('')}</ul>
+              <h3 style="margin-top:0.75rem">Old Procedures</h3>
+              <ul>${data.px.old.map(p=>`<li>${p.Code} — ${p.Description}</li>`).join('')}</ul>
+            </div>
+            <div>
+              <h3>New Diagnoses</h3>
+              <ul>${data.dx.new.map(d=>`<li>${d.Code} — ${d.Description}${d.IsPrimary?' <span class=pill>primary</span>':''}</li>`).join('')}</ul>
+              <h3 style="margin-top:0.75rem">New Procedures</h3>
+              <ul>${data.px.new.map(p=>`<li>${p.Code} — ${p.Description}</li>`).join('')}</ul>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>

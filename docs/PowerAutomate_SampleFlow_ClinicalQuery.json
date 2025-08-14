@@ -1,0 +1,80 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2019-05-01/workflowdefinition.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {},
+    "triggers": {
+      "manual": {
+        "type": "Request",
+        "kind": "Http",
+        "inputs": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "episodeId": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdOn": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "episodeId",
+              "to",
+              "subject",
+              "body"
+            ]
+          }
+        }
+      }
+    },
+    "actions": {
+      "Post_adaptive_card_in_a_chat_or_channel": {
+        "type": "OpenApiConnection",
+        "inputs": {
+          "host": {
+            "connectionName": "teams",
+            "operationId": "PostAdaptiveCardAndWaitForAResponse",
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams"
+          },
+          "parameters": {
+            "recipient": {
+              "recipientType": "user",
+              "userPrincipalName": "@{triggerBody()?['to']}"
+            },
+            "messageBody": "@{string(body('Compose_AdaptiveCard'))}",
+            "updateCardActivityId": ""
+          },
+          "authentication": "@parameters('$authentication')"
+        },
+        "runAfter": {
+          "Compose_AdaptiveCard": [
+            "Succeeded"
+          ]
+        }
+      },
+      "Compose_AdaptiveCard": {
+        "type": "Compose",
+        "inputs": "@{json(replace(string(body('Get_Card_Template')), '$episodeId', triggerBody()?['episodeId']))}"
+      },
+      "Get_Card_Template": {
+        "type": "Compose",
+        "inputs": "{\"$schema\": \"http://adaptivecards.io/schemas/adaptive-card.json\", \"type\": \"AdaptiveCard\", \"version\": \"1.5\", \"body\": [{\"type\": \"TextBlock\", \"size\": \"Large\", \"weight\": \"Bolder\", \"text\": \"Clinical Coding Query\"}, {\"type\": \"TextBlock\", \"text\": \"Episode: **${episodeId}**\", \"wrap\": true}, {\"type\": \"TextBlock\", \"text\": \"From: ${createdBy}\", \"isSubtle\": true, \"wrap\": true}, {\"type\": \"TextBlock\", \"text\": \"Subject: ${subject}\", \"wrap\": true}, {\"type\": \"TextBlock\", \"text\": \"Question:\", \"weight\": \"Bolder\"}, {\"type\": \"TextBlock\", \"text\": \"${body}\", \"wrap\": true}, {\"type\": \"Input.Text\", \"id\": \"clinicianResponse\", \"placeholder\": \"Type your clarification here...\", \"isMultiline\": true}], \"actions\": [{\"type\": \"Action.Submit\", \"title\": \"Send response\", \"data\": {\"msteams\": {\"type\": \"messageBack\", \"displayText\": \"Clinician responded\"}}}]}"
+      }
+    },
+    "outputs": {}
+  },
+  "kind": "Stateful"
+}

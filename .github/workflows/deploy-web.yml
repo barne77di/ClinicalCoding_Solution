@@ -1,0 +1,28 @@
+
+name: Deploy Web
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'ClinicalCoding.Web/**'
+      - '.github/workflows/deploy-web.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build
+        working-directory: ClinicalCoding.Web
+        run: |
+          npm ci
+          npm run build
+      - name: Upload to Azure Storage static website
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az storage blob upload-batch --destination '$web' --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT }} --source ClinicalCoding.Web/dist --overwrite

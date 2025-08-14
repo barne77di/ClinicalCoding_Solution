@@ -1,0 +1,11 @@
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\bin\Debug\net9.0\ClinicalCoding.Domain.deps.json
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\bin\Debug\net9.0\ClinicalCoding.Domain.dll
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\bin\Debug\net9.0\ClinicalCoding.Domain.pdb
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\obj\Debug\net9.0\ClinicalCoding.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\obj\Debug\net9.0\ClinicalCoding.Domain.AssemblyInfoInputs.cache
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\obj\Debug\net9.0\ClinicalCoding.Domain.AssemblyInfo.cs
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\obj\Debug\net9.0\ClinicalCoding.Domain.csproj.CoreCompileInputs.cache
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\obj\Debug\net9.0\ClinicalCoding.Domain.dll
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\obj\Debug\net9.0\refint\ClinicalCoding.Domain.dll
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\obj\Debug\net9.0\ClinicalCoding.Domain.pdb
+C:\Users\phbarnet\Downloads\ClinicalCoding_Solution_NET9_Pluggable_DLQ\ClinicalCoding.Domain\obj\Debug\net9.0\ref\ClinicalCoding.Domain.dll
