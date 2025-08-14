@@ -1,0 +1,42 @@
+Deploy
+
+1) Create a resource group
+az group create -n cc-demo-rg -l uksouth
+
+2) Deploy the ARM template
+az deployment group create \
+  -g cc-demo-rg \
+  -f azuredeploy.json \
+  -p @azuredeploy.parameters.json
+
+Publish your app
+
+API (from ClinicalCoding.Api):
+dotnet publish -c Release
+# use Azure Web App deploy of your choice (zip deploy or GitHub Actions)
+
+SPA (Storage Static Website option enabled):
+# in ClinicalCoding.Web
+npm ci
+npm run build
+# upload dist/ to the $web container
+az storage blob upload-batch \
+  --account-name <spaStorageAccountName> \
+  -d '$web' -s dist \
+  --auth-mode key
+
+Notes & options
+
+Azure OpenAI: The template creates the account and injects the key+endpoint into Web App settings. Model deployments (e.g., gpt-4o-mini) are not included because API versions/quotas vary; deploy models via Azure portal or CLI afterward, then set AzureOpenAI:DeploymentName in your app settings if you use one.
+
+Text Analytics: Standard SKU provisioned; if you have a multi-service Cognitive Services account already, point the app settings to that instead.
+
+DLQ Provider: Change dlqProvider to ServiceBus to deploy SB (Basic SKU). The Web App gets DLQ__Provider=ServiceBus and the correct connection string.
+
+App Insights: The Web App gets APPLICATIONINSIGHTS_CONNECTION_STRING; you don’t need any code changes (SDK is already added).
+
+SQL firewall: allowAzureServicesToSql=true adds the 0.0.0.0 rule. You may also add your client IP in the portal for direct SSMS access.
+
+Security: This template places secrets in App Settings (scoped to the site). For production, prefer Key Vault + managed identity and reference secrets with KeyVault references.
+
+SPA alternative: If you prefer Azure Static Web Apps, that’s typically bootstrapped via the Azure portal/CLI because it wires a GitHub Action. The included Storage Static Website option is simple and works with any CI.

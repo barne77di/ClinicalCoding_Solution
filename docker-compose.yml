@@ -1,0 +1,49 @@
+
+services:
+  sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=YourStrong(!)Password
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourStrong(!)Password -C -Q 'SELECT 1' || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  api:
+    build:
+      context: ./ClinicalCoding.Api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=sql;Database=ClinicalCoding;User Id=sa;Password=YourStrong(!)Password;Encrypt=False
+      - AzureOpenAI__Endpoint=${AzureOpenAI__Endpoint}
+      - AzureOpenAI__ApiKey=${AzureOpenAI__ApiKey}
+      - AzureOpenAI__Deployment=${AzureOpenAI__Deployment:-gpt-4o-mini}
+      - TextAnalytics__Endpoint=${TextAnalytics__Endpoint}
+      - TextAnalytics__ApiKey=${TextAnalytics__ApiKey}
+      - AzureAd__Instance=${AzureAd__Instance:-https://login.microsoftonline.com/}
+      - AzureAd__Domain=${AzureAd__Domain}
+      - AzureAd__TenantId=${AzureAd__TenantId}
+      - AzureAd__ClientId=${AzureAd__ClientId}
+      - AzureAd__Audience=${AzureAd__Audience}
+    ports:
+      - "8080:8080"
+    depends_on:
+      sql:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./ClinicalCoding.Web
+    environment:
+      - VITE_TENANT_ID=${AzureAd__TenantId}
+      - VITE_AAD_CLIENT_ID=${SPA__ClientId}
+      - VITE_API_SCOPE=${AzureAd__Audience}/access_as_user
+      - VITE_API_BASE=http://localhost:8080
+    ports:
+      - "5173:80"
+    depends_on:
+      - api

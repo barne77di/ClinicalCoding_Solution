@@ -1,0 +1,420 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"location": {
+			"type": "string",
+			"defaultValue": "[resourceGroup().location]"
+		},
+		"appServicePlanName": {
+			"type": "string",
+			"defaultValue": "cc-asplan"
+		},
+		"webAppName": { "type": "string" },
+
+		"sqlServerName": { "type": "string" },
+		"sqlAdminLogin": {
+			"type": "string",
+			"defaultValue": "sqladmin"
+		},
+		"sqlAdminPassword": { "type": "secureString" },
+		"sqlDatabaseName": {
+			"type": "string",
+			"defaultValue": "ClinicalCoding"
+		},
+		"allowAzureServicesToSql": {
+			"type": "bool",
+			"defaultValue": true
+		},
+
+		"dlqProvider": {
+			"type": "string",
+			"defaultValue": "Storage",
+			"allowedValues": [ "Storage", "ServiceBus" ]
+		},
+		"dlqQueueName": {
+			"type": "string",
+			"defaultValue": "deadletters"
+		},
+
+		"storageAccountName": { "type": "string" },
+		"serviceBusNamespaceName": {
+			"type": "string",
+			"defaultValue": "cc-sbns"
+		},
+
+		"appInsightsName": {
+			"type": "string",
+			"defaultValue": "cc-appins"
+		},
+
+		"textAnalyticsEnabled": {
+			"type": "bool",
+			"defaultValue": true
+		},
+		"textAnalyticsName": {
+			"type": "string",
+			"defaultValue": "cc-textai"
+		},
+
+		"openAIEnabled": {
+			"type": "bool",
+			"defaultValue": false
+		},
+		"openAIAccountName": {
+			"type": "string",
+			"defaultValue": "cc-aoaiacct"
+		},
+
+		"flowWebhookSecret": { "type": "secureString" },
+		"resuggestMinIntervalMinutes": {
+			"type": "int",
+			"defaultValue": 5
+		},
+
+		"spaStaticWebsiteEnabled": {
+			"type": "bool",
+			"defaultValue": true
+		},
+		"spaStorageAccountName": {
+			"type": "string",
+			"defaultValue": "ccspastatic"
+		}
+	},
+	"variables": {
+		"sqlVersion": "12.0",
+		"sqlSkuName": "Basic",
+		"sqlSkuTier": "Basic",
+		"sqlSkuCapacity": 5,
+
+		"planSku": {
+			"name": "S1",
+			"tier": "Standard",
+			"size": "S1",
+			"capacity": 1
+		},
+
+		"storageApiVersion": "2022-09-01",
+		"serviceBusApiVersion": "2022-01-01-preview",
+		"cogApiVersion": "2023-05-01",
+		"insightsApiVersion": "2020-02-02",
+		"webApiVersion": "2022-03-01",
+
+		"storageConnString": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), variables('storageApiVersion')).keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]",
+		"spaStorageConnString": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('spaStorageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('spaStorageAccountName')), variables('storageApiVersion')).keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]",
+
+		"sbAuthRuleId": "[resourceId('Microsoft.ServiceBus/namespaces/AuthorizationRules', parameters('serviceBusNamespaceName'), 'RootManageSharedAccessKey')]",
+		"sbConnString": "[if(equals(parameters('dlqProvider'), 'ServiceBus'), listKeys(variables('sbAuthRuleId'), variables('serviceBusApiVersion')).primaryConnectionString, json('null'))]"
+	},
+	"resources": [
+		{
+			"type": "Microsoft.Web/serverfarms",
+			"apiVersion": "2022-03-01",
+			"name": "[parameters('appServicePlanName')]",
+			"location": "[parameters('location')]",
+			"sku": "[variables('planSku')]",
+			"kind": "linux",
+			"properties": {
+				"reserved": true
+			}
+		},
+		{
+			"type": "Microsoft.Web/sites",
+			"apiVersion": "2022-03-01",
+			"name": "[parameters('webAppName')]",
+			"location": "[parameters('location')]",
+			"kind": "app,linux",
+			"identity": { "type": "SystemAssigned" },
+			"dependsOn": [
+				"[resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName'))]",
+				"[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]"
+			],
+			"properties": {
+				"httpsOnly": true,
+				"serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName'))]",
+				"siteConfig": {
+					"linuxFxVersion": "DOTNET|9.0",
+					"appSettings": [
+						{
+							"name": "ASPNETCORE_ENVIRONMENT",
+							"value": "Production"
+						},
+
+						{
+							"name": "ConnectionStrings__DefaultConnection",
+							"value": "[concat('Server=tcp:', reference(resourceId('Microsoft.Sql/servers', parameters('sqlServerName')),'2018-06-01-preview').fullyQualifiedDomainName, ',1433;Initial Catalog=', parameters('sqlDatabaseName'), ';Persist Security Info=False;User ID=', parameters('sqlAdminLogin'), ';Password=', parameters('sqlAdminPassword'), ';MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]"
+						},
+
+						{
+							"name": "DLQ__Provider",
+							"value": "[parameters('dlqProvider')]"
+						},
+						{
+							"name": "DLQ__Storage__ConnectionString",
+							"value": "[variables('storageConnString')]"
+						},
+						{
+							"name": "DLQ__Storage__QueueName",
+							"value": "[parameters('dlqQueueName')]"
+						},
+						{
+							"name": "DLQ__ServiceBus__ConnectionString",
+							"value": "[if(equals(parameters('dlqProvider'), 'ServiceBus'), variables('sbConnString'), '')]"
+						},
+						{
+							"name": "DLQ__ServiceBus__QueueName",
+							"value": "[parameters('dlqQueueName')]"
+						},
+
+						{
+							"name": "AzureOpenAI__Endpoint",
+							"value": "[if(parameters('openAIEnabled'), concat('https://', parameters('openAIAccountName'), '.openai.azure.com/'), '')]"
+						},
+						{
+							"name": "AzureOpenAI__ApiKey",
+							"value": "[if(parameters('openAIEnabled'), listKeys(resourceId('Microsoft.CognitiveServices/accounts', parameters('openAIAccountName')), variables('cogApiVersion')).key1, '')]"
+						},
+
+						{
+							"name": "TextAnalytics__Endpoint",
+							"value": "[if(parameters('textAnalyticsEnabled'), concat('https://', parameters('textAnalyticsName'), '.cognitiveservices.azure.com/'), '')]"
+						},
+						{
+							"name": "TextAnalytics__ApiKey",
+							"value": "[if(parameters('textAnalyticsEnabled'), listKeys(resourceId('Microsoft.CognitiveServices/accounts', parameters('textAnalyticsName')), variables('cogApiVersion')).key1, '')]"
+						},
+
+						{
+							"name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+							"value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), variables('insightsApiVersion')).connectionString]"
+						},
+
+						{
+							"name": "Webhooks__FlowSecret",
+							"value": "[parameters('flowWebhookSecret')]"
+						},
+						{
+							"name": "Resuggest__MinIntervalMinutes",
+							"value": "[string(parameters('resuggestMinIntervalMinutes'))]"
+						}
+					]
+				}
+			}
+		},
+
+		{
+			"type": "Microsoft.Sql/servers",
+			"apiVersion": "2022-05-01-preview",
+			"name": "[parameters('sqlServerName')]",
+			"location": "[parameters('location')]",
+			"properties": {
+				"administratorLogin": "[parameters('sqlAdminLogin')]",
+				"administratorLoginPassword": "[parameters('sqlAdminPassword')]",
+				"version": "[variables('sqlVersion')]",
+				"publicNetworkAccess": "Enabled"
+			},
+			"resources": [
+				{
+					"type": "firewallRules",
+					"apiVersion": "2022-05-01-preview",
+					"name": "AllowAzure",
+					"condition": "[parameters('allowAzureServicesToSql')]",
+					"properties": {
+						"startIpAddress": "0.0.0.0",
+						"endIpAddress": "0.0.0.0"
+					}
+				},
+				{
+					"type": "databases",
+					"apiVersion": "2022-05-01-preview",
+					"name": "[parameters('sqlDatabaseName')]",
+					"location": "[parameters('location')]",
+					"sku": {
+						"name": "[variables('sqlSkuName')]",
+						"tier": "[variables('sqlSkuTier')]",
+						"capacity": "[variables('sqlSkuCapacity')]"
+					},
+					"properties": { "collation": "SQL_Latin1_General_CP1_CI_AS" }
+				}
+			]
+		},
+
+		{
+			"type": "Microsoft.Insights/components",
+			"apiVersion": "2020-02-02",
+			"name": "[parameters('appInsightsName')]",
+			"location": "[parameters('location')]",
+			"kind": "web",
+			"properties": {
+				"Application_Type": "web",
+				"Flow_Type": "Bluefield",
+				"Request_Source": "AzureARM"
+			}
+		},
+
+		{
+			"type": "Microsoft.Storage/storageAccounts",
+			"apiVersion": "2022-09-01",
+			"name": "[parameters('storageAccountName')]",
+			"condition": "[equals(parameters('dlqProvider'), 'Storage')]",
+			"location": "[parameters('location')]",
+			"sku": { "name": "Standard_LRS" },
+			"kind": "StorageV2",
+			"properties": {
+				"minimumTlsVersion": "TLS1_2",
+				"supportsHttpsTrafficOnly": true
+			}
+		},
+		{
+			"type": "Microsoft.Storage/storageAccounts/queueServices",
+			"apiVersion": "2022-09-01",
+			"name": "[format('{0}/default', parameters('storageAccountName'))]",
+			"condition": "[equals(parameters('dlqProvider'), 'Storage')]",
+			"dependsOn": [ "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]" ],
+			"properties": {}
+		},
+		{
+			"type": "Microsoft.Storage/storageAccounts/queueServices/queues",
+			"apiVersion": "2022-09-01",
+			"name": "[format('{0}/default/{1}', parameters('storageAccountName'), parameters('dlqQueueName'))]",
+			"condition": "[equals(parameters('dlqProvider'), 'Storage')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Storage/storageAccounts/queueServices', parameters('storageAccountName'), 'default')]"
+			],
+			"properties": {}
+		},
+
+		{
+			"type": "Microsoft.ServiceBus/namespaces",
+			"apiVersion": "2022-01-01-preview",
+			"name": "[parameters('serviceBusNamespaceName')]",
+			"condition": "[equals(parameters('dlqProvider'), 'ServiceBus')]",
+			"location": "[parameters('location')]",
+			"sku": {
+				"name": "Basic",
+				"tier": "Basic"
+			},
+			"properties": { "disableLocalAuth": false },
+			"resources": [
+				{
+					"type": "AuthorizationRules",
+					"apiVersion": "2022-01-01-preview",
+					"name": "RootManageSharedAccessKey",
+					"properties": { "rights": [ "Listen", "Send", "Manage" ] }
+				},
+				{
+					"type": "queues",
+					"apiVersion": "2022-01-01-preview",
+					"name": "[parameters('dlqQueueName')]",
+					"properties": {
+						"maxDeliveryCount": 10,
+						"deadLetteringOnMessageExpiration": true
+					}
+				}
+			]
+		},
+
+		{
+			"type": "Microsoft.CognitiveServices/accounts",
+			"apiVersion": "2023-05-01",
+			"name": "[parameters('textAnalyticsName')]",
+			"condition": "[parameters('textAnalyticsEnabled')]",
+			"location": "[parameters('location')]",
+			"kind": "TextAnalytics",
+			"sku": { "name": "S" },
+			"properties": { "publicNetworkAccess": "Enabled" }
+		},
+
+		{
+			"type": "Microsoft.CognitiveServices/accounts",
+			"apiVersion": "2023-05-01",
+			"name": "[parameters('openAIAccountName')]",
+			"condition": "[parameters('openAIEnabled')]",
+			"location": "[parameters('location')]",
+			"kind": "OpenAI",
+			"sku": { "name": "S0" },
+			"properties": { "publicNetworkAccess": "Enabled" }
+		},
+
+		{
+			"type": "Microsoft.Storage/storageAccounts",
+			"apiVersion": "2022-09-01",
+			"name": "[parameters('spaStorageAccountName')]",
+			"condition": "[parameters('spaStaticWebsiteEnabled')]",
+			"location": "[parameters('location')]",
+			"sku": { "name": "Standard_LRS" },
+			"kind": "StorageV2",
+			"properties": {
+				"supportsHttpsTrafficOnly": true,
+				"minimumTlsVersion": "TLS1_2"
+			}
+		},
+		{
+			"type": "Microsoft.Storage/storageAccounts/blobServices",
+			"apiVersion": "2022-09-01",
+			"name": "[format('{0}/default', parameters('spaStorageAccountName'))]",
+			"condition": "[parameters('spaStaticWebsiteEnabled')]",
+			"dependsOn": [ "[resourceId('Microsoft.Storage/storageAccounts', parameters('spaStorageAccountName'))]" ],
+			"properties": {}
+		},
+		{
+			"type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+			"apiVersion": "2022-09-01",
+			"name": "[format('{0}/default/$web', parameters('spaStorageAccountName'))]",
+			"condition": "[parameters('spaStaticWebsiteEnabled')]",
+			"dependsOn": [ "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('spaStorageAccountName'), 'default')]" ],
+			"properties": { "publicAccess": "Blob" }
+		},
+		{
+			"type": "Microsoft.Storage/storageAccounts/staticWebsite",
+			"apiVersion": "2022-09-01",
+			"name": "[parameters('spaStorageAccountName')]",
+			"condition": "[parameters('spaStaticWebsiteEnabled')]",
+			"dependsOn": [ "[resourceId('Microsoft.Storage/storageAccounts', parameters('spaStorageAccountName'))]" ],
+			"properties": {
+				"indexDocument": "index.html",
+				"errorDocument404Path": "index.html",
+				"enabled": true
+			}
+		}
+	],
+	"outputs": {
+		"webAppUrl": {
+			"type": "string",
+			"value": "[concat('https://', parameters('webAppName'), '.azurewebsites.net')]"
+		},
+		"sqlFqdn": {
+			"type": "string",
+			"value": "[reference(resourceId('Microsoft.Sql/servers', parameters('sqlServerName')), '2018-06-01-preview').fullyQualifiedDomainName]"
+		},
+		"storageConnString": {
+			"type": "string",
+			"condition": "[equals(parameters('dlqProvider'), 'Storage')]",
+			"value": "[variables('storageConnString')]"
+		},
+		"serviceBusConnString": {
+			"type": "string",
+			"condition": "[equals(parameters('dlqProvider'), 'ServiceBus')]",
+			"value": "[variables('sbConnString')]"
+		},
+		"textAnalyticsEndpoint": {
+			"type": "string",
+			"condition": "[parameters('textAnalyticsEnabled')]",
+			"value": "[concat('https://', parameters('textAnalyticsName'), '.cognitiveservices.azure.com/')]"
+		},
+		"openAIEndpoint": {
+			"type": "string",
+			"condition": "[parameters('openAIEnabled')]",
+			"value": "[concat('https://', parameters('openAIAccountName'), '.openai.azure.com/')]"
+		},
+		"appInsightsConnectionString": {
+			"type": "string",
+			"value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), variables('insightsApiVersion')).connectionString]"
+		},
+		"spaStaticSitePrimaryWebEndpoint": {
+			"type": "string",
+			"condition": "[parameters('spaStaticWebsiteEnabled')]",
+			"value": "[reference(resourceId('Microsoft.Storage/storageAccounts', parameters('spaStorageAccountName')), variables('storageApiVersion')).primaryEndpoints.web]"
+		}
+	}
+}

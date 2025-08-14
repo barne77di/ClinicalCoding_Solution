@@ -1,384 +1,301 @@
-**Clinical Coding – AI-Assisted Coding Demo (NET 9)**
-An end-to-end sample solution that:
 
-ingests a clinical episode,
+# ClinicalCoding (.NET 9) – AI-Assisted Clinical Coding (Starter Solution)
 
-suggests ICD-10 (UK) diagnoses and OPCS-4 procedures (Azure OpenAI + Text Analytics with rule-based fallback),
+This Visual Studio solution provides a clean starting point for building an AI-assisted clinical coding system on Microsoft Cloud.
 
-supports coder/reviewer workflow (submit/approve/reject),
+## Projects
 
-sends clinician queries via Teams (Power Automate or Graph),
+- **ClinicalCoding.Api** (ASP.NET Core Minimal API, Swagger enabled)
+- **ClinicalCoding.Domain** (Episode/Diagnosis/Procedure models + abstractions)
+- **ClinicalCoding.Infrastructure** (Rule-based suggestion service; swap with Azure services later)
+- **ClinicalCoding.Worker** (Background worker for queued episode processing)
+- **ClinicalCoding.Tests** (xUnit tests)
 
-auto re-suggests on clinician reply, computes old vs new code diffs, and supports revert (with optional 2-person approval),
+## Run locally
 
-pushes deltas to Power BI,
+1. Open `ClinicalCoding.sln` in Visual Studio 2022 (17.10+) or VS 2025 Preview.
+2. Set **ClinicalCoding.Api** as Startup Project and press F5.
+3. Browse to Swagger UI and try **POST /episodes/suggest** with sample body:
 
-includes DLQ (Storage Queue or Service Bus), Application Insights, and a React admin SPA.
-
-⚠️ This is a demo. Do not use real patient data.
-
-**Solution layout**
-	ClinicalCoding.Domain/            # Models (Episode, Diagnosis, Procedure, etc.)
-	ClinicalCoding.Infrastructure/    # EF Core DbContext, Repositories, Services (AOAI, TextAnalytics, DLQ, Graph, PowerBI)
-	ClinicalCoding.Api/               # Minimal API (.NET 9) + endpoints + OpenAPI JSON + static assets (diff.html)
-	ClinicalCoding.Worker/            # (optional) background worker examples (DLQ processing)
-	ClinicalCoding.Web/               # React (Vite) SPA admin UI
-	docs/                             # Adaptive Card examples, etc.
-
-**Prerequisites**
-
-.NET 9 SDK
-
-Node 18+ and npm
-
-SQL Server (LocalDB or full)
-
-(Optional) Azure: OpenAI, Cognitive Services Text Analytics, Storage/Service Bus, App Insights, Power BI Workspace
-(Optional) Entra ID (Azure AD) app registrations (API + SPA)
-
-**Configure**
-**
-****1) Database ******
-
-ClinicalCoding.Api/appsettings.Development.json
+```json
 {
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Database=ClinicalCoding;Trusted_Connection=True;TrustServerCertificate=True"
-  },
-  "AzureOpenAI": { "Endpoint": "", "ApiKey": "" },
-  "TextAnalytics": { "Endpoint": "", "ApiKey": "" },
-  "DLQ": {
-    "Provider": "Storage",
-    "Storage": { "ConnectionString": "UseDevelopmentStorage=true", "QueueName": "deadletters" }
-  },
-  "Resuggest": { "MinIntervalMinutes": 5 },
-  "Webhooks": { "FlowSecret": "devsecret" },
-  "Auth": { "Disable": true }  // DEV BYPASS, see below
+  "nhsNumber": "9999999999",
+  "patientName": "John Smith",
+  "admissionDate": "2025-08-01T10:00:00Z",
+  "dischargeDate": "2025-08-06T15:00:00Z",
+  "specialty": "Respiratory Medicine",
+  "sourceText": "Admitted with community-acquired pneumonia (right lower lobe). Background COPD. CXR performed, nebulisation and oxygen given."
 }
+```
 
-On first run the API applies EF migrations automatically.
-If you prefer manual DB creation, run the solution once (it will create schema), or run your generated SQL scripts.
+## Next steps (swap rule-based for Azure AI)
 
-**2) Dev auth bypass (for local testing)**
+- Replace `RuleBasedSuggestionService` with integrations to:
+  - Azure AI Text Analytics for Health
+  - Azure OpenAI (prompt with coding rules)
+  - Azure Cognitive Search (evidence retrieval)
+- Add persistence (EF Core to Azure SQL) and identity (Entra ID).
+- Add queue ingestion (Azure Storage Queues / Service Bus) to the Worker.
+- Add Power BI dataset refresh via Web API.
+
+> This repo is intentionally dependency-light so it builds without external services; wire up cloud dependencies as you go.
 
 
-If you don’t want to sign in during dev:
+---
 
-Set "Auth": { "Disable": true } (as above).
+## Entra ID (Azure AD) Authentication
 
-Ensure Program.cs contains the middleware between UseAuthentication() and UseAuthorization():
+1. **Register API app** in Entra ID:
+   - Name: `ClinicalCoding.Api`
+   - App ID URI: `api://<API_CLIENT_ID>`
+   - Expose an API → add scope `access_as_user` for user delegated access.
+2. **Register SPA app**:
+   - Name: `ClinicalCoding.Web`
+   - Platform: Single-page application
+   - Redirect URI: `http://localhost:5173`
+   - Add permission to your API: scope `access_as_user` (grant admin consent).
+3. **Configure** `appsettings.json` → `AzureAd` with TenantId, ClientId (API), Audience (`api://<API_CLIENT_ID>`).
+4. **Configure** `ClinicalCoding.Web/.env` based on `.env.example`:
+   - `VITE_TENANT_ID`, `VITE_AAD_CLIENT_ID` (SPA), `VITE_API_SCOPE=api://<API_CLIENT_ID>/access_as_user`.
 
-app.UseCors("spa");
-app.UseAuthentication();
+> The API endpoints require authorization and CORS allows the SPA at `http://localhost:5173`.
 
-if (builder.Configuration.GetValue<bool>("Auth:Disable", false))
-{
-    app.Use(async (ctx, next) =>
-    {
-        if (ctx.User?.Identity?.IsAuthenticated != true)
-        {
-            var id = new ClaimsIdentity("DevBypass");
-            id.AddClaim(new Claim("roles", "Coder"));
-            id.AddClaim(new Claim("roles", "Reviewer"));
-            id.AddClaim(new Claim(ClaimTypes.Upn, "dev@local"));
-            ctx.User = new ClaimsPrincipal(id);
-        }
-        await next();
-    });
-}
+### Running the SPA
 
-app.UseAuthorization();
-
-**3) SPA environment**
-Create ClinicalCoding.Web/.env.local:
-
-VITE_API_BASE=https://localhost:7249
-VITE_BYPASS_AUTH=true
-# If you want real auth instead of bypass:
-# VITE_BYPASS_AUTH=false
-# VITE_AAD_CLIENT_ID=<SPA App (client) ID>
-# VITE_AAD_TENANT_ID=<Tenant ID>
-# VITE_REDIRECT_URI=http://localhost:5173
-# VITE_API_SCOPE=api://<API App (client) ID>/user_impersonation
-
-If using real auth: create two Entra apps (API + SPA). Expose user_impersonation on API; assign SPA the delegated scope; add redirect http://localhost:5173; grant admin consent.
-
-**Run locally**
-
-dotnet dev-certs https --trust
-cd ClinicalCoding.Api
-dotnet run
-
-Look for:
-Now listening on: https://localhost:7249
-
-**Check:**
-
-https://localhost:7249/health → { status: "ok" }
-
-https://localhost:7249/openapi/v1.json → OpenAPI JSON
-
-https://localhost:7249/diff.html → diff demo page
-
+```bash
 cd ClinicalCoding.Web
 npm install
 npm run dev
+```
 
-Open http://localhost:5173
-If you change VITE_API_BASE, restart npm run dev
+### EF Core migrations
 
-**What it does (happy path)**
+Create proper schema with migrations (recommended for non-dev):
+
+```bash
+dotnet tool install --global dotnet-ef
+dotnet add ClinicalCoding.Infrastructure package Microsoft.EntityFrameworkCore.Design
+dotnet ef migrations add InitialCreate -p ClinicalCoding.Infrastructure -s ClinicalCoding.Api
+dotnet ef database update -p ClinicalCoding.Infrastructure -s ClinicalCoding.Api
+```
 
 
-Suggest (no DB write)
-POST /episodes/suggest → AOAI/Text Analytics → ICD-10/OPCS-4 suggestions.
 
-Create Episode
-POST /episodes → persists Episode + codes, writes EpisodeCreated Audit.
+---
 
-List Episodes
-GET /episodes?status&from&to&page&pageSize (secured)
-UI shows table with workflow buttons; exports at /export/episodes.csv and /export/episodes.json.
+## Docker Compose (API + SQL + Web)
 
-Submit / Approve / Reject
+```bash
+docker compose up --build
+```
+- API at `http://localhost:8080`
+- SPA at `http://localhost:5173`
+- SQL Server at `localhost,1433` (sa / YourStrong(!)Password)
 
-POST /episodes/{id}/submit (Coder)
+Set environment variables (e.g. via `.env`) for Azure keys and Entra config used in `docker-compose.yml`.
 
-POST /episodes/{id}/approve?notes=... (Reviewer)
+## Power BI
 
-POST /episodes/{id}/reject?notes=... (Reviewer)
+Use **Web** connector:
+- JSON: `http://localhost:8080/export/episodes.json`
+- CSV:  `http://localhost:8080/export/episodes.csv`
 
-Clinician query via Teams
+You can schedule refresh after publishing to Power BI Service.
 
-POST /episodes/{id}/queries (Coder) → creates ClinicianQuery + calls Power Automate webhook (if configured).
 
-Or send Adaptive Card directly using Graph (see GraphTeamsSender).
 
-Clinician reply (Power Automate webhook → HMAC)
-Flow posts to:
+---
 
-bash
-Copy
-Edit
-POST /webhooks/flow/queries/{id}/response
-Headers: x-signature: sha256=<HMAC body with Webhooks:FlowSecret>
-Body: { "responder":"Dr X", "responseText":"..." }
-Pipeline:
+## RBAC & Approvals
 
-Verify HMAC → store response → find episode
+- Define **App roles** on the API app registration (Entra ID → App roles):
+  - `Coder` (value: `Coder`)
+  - `Reviewer` (value: `Reviewer`)
+- Assign roles to users or groups. The role arrives in the `roles` claim.
+- Policies:
+  - `Coder` can create episodes, request suggestions, submit drafts, and create clinician queries.
+  - `Reviewer` can approve or reject submitted episodes.
 
-Debounce (skip if a recent re-suggest occurred)
+**Workflow states**: Draft → Submitted → Approved/Rejected
 
-Append reply to Episode.SourceText → run SuggestAsync
+**Endpoints:**
+- `POST /episodes/{id}/submit` (Coder)
+- `POST /episodes/{id}/approve?notes=...` (Reviewer)
+- `POST /episodes/{id}/reject?notes=...` (Reviewer)
+- `POST /episodes/{id}/queries` (Coder) → sends payload to Power Automate webhook
 
-Compute deltas (added/removed) vs. current codes
+## Power Automate (Teams query)
 
-Replace codes → write ReSuggestionApplied Audit with old/new sets
+Create an **Instant cloud flow** with a **When an HTTP request is received** trigger. Add steps to:
+- Post an Adaptive Card to a Teams channel or chat for the clinician
+- Optionally collect a response and PATCH back to your API
 
-Push a row to Power BI push dataset (SuggestionDeltas)
-
-Review code diff & Revert
-
-GET /episodes/{id}/code-diff → latest “old vs new” from audit
-
-Revert options:
-
-POST /episodes/{id}/revert?auditId=... (direct)
-
-Two-person flow:
-
-POST /episodes/{id}/revert-request (Reviewer A)
-
-POST /episodes/{id}/revert-approve (Reviewer B) or .../revert-reject
-
-Extra features
-Upload & Compare (no DB write)
-Upload a narrative (and optionally original codes) and get side-by-side comparison.
-
-Endpoint: POST /episodes/compare-upload (multipart/form-data)
-Fields:
-
-file (required): narrative (TXT/CSV/JSON)
-
-codes (optional): coder codes JSON or CSV
-
-Returns:
+Copy the trigger URL into `PowerAutomate:WebhookUrl` (appsettings or environment variable). The API will POST:
+```json
 {
-  "narrativePreview":"...",
-  "dx": { "old":[...], "new":[...] },
-  "px": { "old":[...], "new":[...] },
-  "deltas": { "dxAdded":["J13"], "dxRemoved":["A41.9"], "pxAdded":[], "pxRemoved":["H33.8","X29.9"] }
+  "episodeId": "guid",
+  "to": "dr.smith@hospital.nhs.uk",
+  "subject": "Clinical Coding Query",
+  "body": "Please clarify ...",
+  "createdBy": "user@domain",
+  "createdOn": "2025-08-12T14:00:00Z"
 }
+```
 
-SPA section Upload & Compare lets you pick a file, paste codes, and view the diff immediately.
 
-DLQ + retry
-Choose Storage Queue or Service Bus via config.
 
-Failed webhook or downstream operations are dead-lettered.
+---
 
-Admin retry: POST /deadletter/{id}/retry.
+## Clinician queries – Teams options
 
-Application Insights
-builder.Services.AddApplicationInsightsTelemetry();
+### A) Power Automate (recommended for citizen dev)
+- Import `docs/PowerAutomate_SampleFlow_ClinicalQuery.json` into a new Flow.
+- It exposes an HTTP trigger and posts the Adaptive Card in Teams ("Post adaptive card and wait for a response").
+- Put the trigger URL into `PowerAutomate:WebhookUrl`.
 
-Distributed tracing & logs across API/services.
+### B) Graph API (application permissions)
+- Use **application permissions**: `Chat.ReadWrite.All` and `User.Read.All` (admin consent).
+- Create a client secret and set values in `appsettings.json` under `Graph`.
+- Endpoint (Coder role): `POST /teams/sendCard` will send the sample `docs/AdaptiveCard_ClinicalQuery.json` card to `Graph:TestUserUpn` in a 1:1 chat (sample logic).
+  > Note: For production, prefer sending to a channel or use **sendActivityNotification**. Direct 1:1 app-only posting has constraints and may require proactive installation of your Teams app.
 
-Power BI push dataset
-PbiPushService.PushRowsAsync("SuggestionDeltas", ...) per resuggest.
+### Adaptive Card
+- Template stored at `docs/AdaptiveCard_ClinicalQuery.json` (v1.5). Replace `${...}` tokens before sending or bind using your Flow/template step.
 
-Teams (Adaptive Cards)
-Flow path uses webhook + HMAC to return replies.
+---
 
-Graph path can send cards directly with app-only permissions (see GraphTeamsSender).
+## Reviewer dashboard
+- SPA now shows filters (Status, From/To date placeholders) and provides **Export CSV/JSON** links.
+- Buttons appear based on the user's role claims (`Coder`/`Reviewer`).
 
-Roles & RBAC
-JWT roles claim: Coder, Reviewer
 
-Policies:
 
-Coder endpoints: create, suggest, submit, clinician query
+---
 
-Reviewer endpoints: approve, reject, revert (+ two-person revert when enabled)
+## Adaptive Card response wiring
 
-In dev bypass, you get both roles.
+Two options to record clinician responses:
 
-Key endpoints (API)
-Public health & assets
+1) **Authenticated API** (internal tools):  
+   `POST /queries/{id}/response` with JSON or form params `responder`, `responseText`.
 
-GET /health
+2) **Flow webhook** (from Power Automate card submit):  
+   `POST /webhooks/flow/queries/{id}/response`  
+   - Header: `x-shared-secret: <your secret>` (set `Webhooks:FlowSecret`)
+   - Body JSON example:
+     ```json
+     { "responder": "dr.smith@nhs.net", "responseText": "Bacterial RLL pneumonia confirmed" }
+     ```
 
-GET /openapi/v1.json
+## Filtering & pagination
 
-GET /diff.html
+- `GET /episodes?status=1&from=2025-08-01T00:00:00Z&to=2025-08-31T23:59:59Z&page=1&pageSize=50`  
+  Returns `{ page, pageSize, total, items: [...] }`.
 
-Episodes
+- Exports accept the same filters:
+  - `/export/episodes.csv?status=2&from=...&to=...`
+  - `/export/episodes.json?status=2&from=...&to=...`
 
-POST /episodes/suggest
+## Deploy
 
-POST /episodes
+- **Quick infra (az CLI)**: `deploy/scripts/provision.sh` (creates RG, SQL, App Service for API, Storage static site).
+- **GitHub Actions**:
+  - `deploy-api.yml` (needs `AZURE_WEBAPP_PUBLISH_PROFILE` + `AZURE_WEB_APP_NAME` secrets)
+  - `deploy-web.yml` (needs `AZURE_STORAGE_ACCOUNT` secret; configure Storage static website first).
 
-GET /episodes?status&from&to&page&pageSize
 
-GET /episodes/{id}
 
-POST /episodes/{id}/submit (Coder)
+---
 
-POST /episodes/{id}/approve?notes=... (Reviewer)
+## Secure Flow webhook (HMAC)
 
-POST /episodes/{id}/reject?notes=... (Reviewer)
+- Set `Webhooks:FlowSecret` in API config.
+- Compute signature in Flow (Expression action) as `sha256(body, secret)` equivalent:
+  - In Power Automate, use **"Compose"** with `base64ToString(hmacSha256(triggerBody(), '<secret>'))` then convert to hex,
+    or call an Azure Function/Custom Connector to add the `x-signature` header.
+- API expects header: `x-signature: sha256=<hex>`
 
-Diff & revert
+## Application Insights
 
-GET /episodes/{id}/code-diff
+- Package is added and auto-collects requests, dependencies, traces, and exceptions.
+- Set `ApplicationInsights:ConnectionString` in API settings (or `APPINSIGHTS_CONNECTIONSTRING` env var).
 
-POST /episodes/{id}/revert?auditId=... (Reviewer)
+## Power BI Push Dataset
 
-POST /episodes/{id}/revert-request → POST /episodes/{id}/revert-approve|revert-reject
+- Configure `PowerBI:{TenantId, ClientId, ClientSecret, WorkspaceId, DatasetId}`.
+- Service: `PbiPushService` pushes rows to a table (e.g. `ClinicianResponses`).
+- The webhook now pushes a response record to Power BI after storing the response.
+- Create your dataset with a table schema:
+  - `ClinicianResponses(QueryId:string, EpisodeId:string, Responder:string, RespondedOnUtc:datetime, ResponseText:string)`
 
-Clinician queries
+## Re-suggestion upon clinician response
 
-POST /episodes/{id}/queries (Coder)
+- The webhook records an audit and pushes to Power BI.
+- You can extend it to fetch the `Episode` by id and append the response to `SourceText`, then call the suggestion service again and update codes.
+- If you prefer this behaviour now, tell me and I’ll wire an `EpisodeNotes` field + re-run suggestion atomically.
 
-POST /queries/{id}/response (internal)
 
-POST /webhooks/flow/queries/{id}/response (HMAC webhook)
 
-Export & audit
+### Auto re-suggestion on clinician response
+When the Flow webhook posts a response:
+1. The API verifies HMAC and saves the reply.
+2. The corresponding episode is loaded; the response text is appended to `Episode.SourceText`.
+3. Azure OpenAI/Text Analytics re-run suggestions.
+4. Diagnoses/Procedures are replaced with the new sets.
+5. An audit entry `ReSuggestionApplied` is written with the code deltas.
+6. A `SuggestionDeltas` row is pushed to Power BI.
 
-GET /export/episodes.csv
+Power BI tables to create:
+- `SuggestionDeltas(EpisodeId:string, EventUtc:datetime, DxAdded:string, DxRemoved:string, PxAdded:string, PxRemoved:string)`
 
-GET /export/episodes.json
 
-GET /audit
+---
 
-Upload & compare
+## Reviewer code-diff & revert
+- `GET /episodes/{id}/code-diff` returns the latest re-suggestion audit with **old/new** code sets.
+- The SPA shows a two-column diff and a **Revert to old codes** button (Reviewer-only).
+- `POST /episodes/{id}/revert?auditId=<audit>` restores the previous codes and logs `ReSuggestionReverted`.
 
-POST /episodes/compare-upload (multipart)
+## Debounce (throttle re-suggestions)
+- Configure `Resuggest:MinIntervalMinutes` (default 5). If another response lands within this window, the webhook logs `ReSuggestionSkipped_Debounce` and returns 202 Accepted.
 
-DLQ
+## Retry & Dead-letter
+- On webhook processing errors, the payload is stored in `DeadLetters` with kind `FlowQueryResponse`.
+- Retry via `POST /deadletter/{id}/retry`. (Demo replays normalized fields from the payload.)
 
-POST /deadletter/{id}/retry
 
-Optional dev helpers you may have added locally:
 
-POST /episodes/{id}/resuggest-dev (simulate clinician reply + re-suggest)
+---
 
-POST /episodes/{id}/set-codes-dev (set baseline codes for comparison)
+## Side-by-side diff in Swagger
+- Static page at `/diff.html`. Paste a bearer token into `sessionStorage.setItem('bearer','<token>')` and enter an Episode ID to view the latest code diff.
 
-SPA tips
-Buttons:
+## Azure Queue DLQ with scheduled retries
+- Set `Queues:ConnectionString` and `Queues:DeadLetterName` in API/Worker.
+- On webhook exceptions, payloads are also enqueued to Azure Storage Queue (`timeToLive: 7 days`).
+- The **ClinicalCoding.Worker** reads from the queue and retries with a backoff (using visibility timeouts).
 
-Get Suggestions (stateless)
+## Two-step revert approvals
+- Endpoints (Reviewer policy required):
+  - `POST /episodes/{id}/revert-request?auditId=...` → creates a pending request.
+  - `POST /episodes/{id}/revert-approve?requestId=...` → **must be a different reviewer**; applies the revert.
+  - `POST /episodes/{id}/revert-reject?requestId=...` → declines the revert.
+- Audited: `RevertRequested`, `ReSuggestionReverted`, `RevertRejected`.
 
-Create Episode
 
-List Episodes (filters + export)
+---
 
-Submit/Approve/Reject
+## Pluggable DLQ backend (Storage Queue or Service Bus)
 
-Draft Clinician Query
-
-Diff (opens old vs new panel) + Revert
-
-Upload & Compare (file + optional codes → instant diff)
-
-If List Episodes shows nothing:
-
-Check DevTools → Network for /episodes (401 vs 200).
-
-Use dev bypass or sign in with a token (set VITE_* auth vars).
-
-Ensure VITE_API_BASE points to the port your API printed.
-
-Power Automate webhook (HMAC) test
-PowerShell:
-$QueryId = "<GUID from dbo.ClinicianQueries>"
-$Body = '{"responder":"Dr Smith","responseText":"Confirmed Strep pneumoniae; no sepsis on admission."}'
-$Secret = "devsecret"
-
-$hmac = New-Object System.Security.Cryptography.HMACSHA256 ([Text.Encoding]::UTF8.GetBytes($Secret))
-$sig  = "sha256=" + (($hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($Body)) | ForEach-Object { $_.ToString("x2") }) -join "")
-
-Invoke-RestMethod -Method POST "https://localhost:7249/webhooks/flow/queries/$QueryId/response" `
-  -Headers @{ "x-signature" = $sig } -Body $Body -ContentType "application/json"
-
-Then in SPA click Diff next to that Episode.
-
-Troubleshooting
-ERR_CONNECTION_REFUSED from SPA
-API not running on that port. Start API and set VITE_API_BASE to the exact URL printed by dotnet run.
-
-401 on /episodes
-Endpoint is secured. Enable dev bypass or sign in from SPA (set VITE_AAD_* + VITE_API_SCOPE).
-
-OpenAPI/Swagger issues
-This uses built-in OpenAPI JSON at /openapi/v1.json. If you previously added Swashbuckle and saw TypeLoadException, remove it or align versions. The system runs fine with built-in OpenAPI only.
-
-EF migration failures on startup
-Wrap db.Database.Migrate() in try/catch (already in template) or fix connection string.
-
-Re-suggest seems to do nothing
-Debounce may skip. Set "Resuggest": { "MinIntervalMinutes": 0 } for testing. Check /audit for ReSuggestionApplied.
-
-Vite says env var missing
-Place .env.local in ClinicalCoding.Web folder, restart npm run dev. Use .env.development.local if needed.
-
-Security notes
-All write endpoints are behind Entra ID auth & role policies (except dev bypass).
-
-Webhook is HMAC-signed (x-signature: sha256=<HMAC(body)>).
-
-No real PHI—sample texts only.
-
-Next ideas
-Add DOCX/PDF text extraction on server (e.g., DocX, PdfPig) in compare-upload.
-
-Add per-user queues / worklists and episode locking.
-
-Add SNOMED CT mapping view.
-
-Add cost/DRG impact preview for diffs.
-
-License
-Sample code for demo/education. Review and harden before any real use.
+- Configure in API/Worker settings under `DLQ`:
+  ```json
+  {
+    "DLQ": {
+      "Provider": "Storage", // or "ServiceBus"
+      "Storage": { "ConnectionString": "...", "QueueName": "deadletters" },
+      "ServiceBus": { "ConnectionString": "...", "QueueName": "deadletters" }
+    }
+  }
+  ```
+- The API enqueues failures using `IDeadLetterQueue`.
+- The Worker reads from **either** backend based on `DLQ:Provider` (environment variables supported as `DLQ__Storage__ConnectionString` etc.).
